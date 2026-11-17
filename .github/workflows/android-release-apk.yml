@@ -1,0 +1,63 @@
+name: Build APK from ZIP
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract Project ZIP on Server
+        run: |
+          if [ -f "adaptive-uzbek-keyboard-full-project.zip" ]; then
+            unzip -q -o adaptive-uzbek-keyboard-full-project.zip
+          elif [ -f *.zip ]; then
+            unzip -q -o *.zip
+          fi
+          if [ -d "adaptive-uzbek-keyboard" ] && [ ! -f "settings.gradle.kts" ]; then
+            cp -r adaptive-uzbek-keyboard/* .
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Accept Android SDK 35 Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate Signing Keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore adaptive-uzbek-release.jks \
+            -alias adaptive_uzbek_key \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass UzbekKeyboard2026! \
+            -keypass UzbekKeyboard2026! \
+            -dname "CN=Adaptive Uzbek Keyboard, OU=Mobile NLP, O=UzbekIME, L=Namangan, ST=Namangan, C=UZ"
+          cat > keystore.properties <<EOF
+          storeFile=adaptive-uzbek-release.jks
+          storePassword=UzbekKeyboard2026!
+          keyAlias=adaptive_uzbek_key
+          keyPassword=UzbekKeyboard2026!
+          EOF
+
+      - name: Build Debug & Signed Release APKs
+        run: gradle assembleDebug assembleRelease
+
+      - name: Upload Signed Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: adaptive-uzbek-keyboard-release-apk
+          path: "**/app/build/outputs/apk/release/*.apk"
